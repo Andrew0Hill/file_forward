@@ -33,8 +33,10 @@ def get_remote_connections(tunnel_dir: str):
 def cleanup_connection_files(tunnel_dir: str, con_id: str):
     ib_fpath = os.path.join(tunnel_dir, f"{con_id}.remote")
     if os.path.isfile(ib_fpath):
+        log.debug(f"{con_id} Remote connection file exists, removing.")
         os.remove(ib_fpath)
 
     ob_fpath = os.path.join(tunnel_dir, f"{con_id}.local")
     if os.path.isfile(ob_fpath):
+        log.debug(f"{con_id} Local connection file exists, removing.")
         os.remove(ob_fpath)

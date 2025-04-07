@@ -2,6 +2,7 @@ import asyncio
 import glob
 import logging
 import os
+from asyncio import CancelledError
 from functools import partial
 
 from . import tasks
@@ -12,9 +13,9 @@ log = logging.getLogger(__name__)
 
 class TunnelClient:
 
-    def __init__(self, forward_address: tuple, tunnel_dir: str, new_conn_poll_interval: float | int, file_poll_interval: float | int):
+    def __init__(self, remote_port: int, tunnel_dir: str, new_conn_poll_interval: float | int, file_poll_interval: float | int):
         # Variables
-        self.forward_address = forward_address
+        self.remote_port = remote_port
         self.tunnel_dir = tunnel_dir
         self.new_conn_poll_int = new_conn_poll_interval
         self.file_poll_int = file_poll_interval
@@ -44,14 +45,14 @@ class TunnelClient:
         removed_cons = self.active_cons.keys() - local_cons
 
         for new_con in new_cons:
-            log.info(f"Creating new connection for {new_con}")
+            log.info(f"Creating new client connection for {new_con}")
             try:
-                reader, writer = await asyncio.open_connection(self.forward_address[0], self.forward_address[1])
+                reader, writer = await asyncio.open_connection("localhost", self.remote_port)
                 file_forward_task = asyncio.create_task(tasks.file_forwarding_task(reader, writer, tunnel_dir=self.tunnel_dir, caller="client", con_id=new_con, file_poll_int=self.file_poll_int), name=new_con)
                 file_forward_task.add_done_callback(self.remove_connection_by_id)
                 self.active_cons[new_con] = file_forward_task
-            except Exception:
-                log.exception("Unable to connect to remote host, remote server may not be running yet?")
+            except OSError:
+                log.error(f"{new_con} Unable to connect to remote host, is anything running on port {self.remote_port}?")
 
         for rm_con in removed_cons:
             log.info(f"{rm_con} Attempting to shut down old connection...")
@@ -64,16 +65,28 @@ class TunnelClient:
                 log.info(f"{rm_con} Didn't find connection in active connection set, maybe it was removed earlier?")
 
     async def main(self):
-        # Poll the tunnel directory for new connections every 'self.connection_poll_int' seconds.
-        while True:
-            await self.poll_for_connections()
-            await asyncio.sleep(self.new_conn_poll_int)
+        try:
+            # Poll the tunnel directory for new connections every 'self.connection_poll_int' seconds.
+            while True:
+                await self.poll_for_connections()
+                await asyncio.sleep(self.new_conn_poll_int)
+        except CancelledError:
+            log.warning("Client loop cancelled, will attempt to cancel all connections.")
+            active_con_list = list(self.active_cons.values())
+            if len(active_con_list) != 0:
+                for active_t in self.active_cons.values():
+                    active_t.cancel()
+                log.info("Waiting for all connection tasks to complete...")
+                await asyncio.wait(self.active_cons.values())
+                log.info("All connections finished, client exiting gracefully.")
+            else:
+                log.info("No active connections, client exiting gracefully.")
 
 
 class TunnelServer:
-    def __init__(self, local_address: tuple, tunnel_dir: str, file_poll_interval: int | float):
+    def __init__(self, local_port: int, tunnel_dir: str, file_poll_interval: int | float):
         # Variables
-        self.local_address = local_address
+        self.local_port = local_port
         self.tunnel_dir = tunnel_dir
         self.file_poll_int = file_poll_interval
         # Old tunnel cleanup.
@@ -97,7 +110,14 @@ class TunnelServer:
         # We use a partial here since asyncio.start_server expects the callback to only have two arguments.
         server_task = partial(tasks.file_forwarding_task, tunnel_dir=self.tunnel_dir, caller="server", file_poll_int=self.file_poll_int)
         # Run the server.
-        server = await asyncio.start_server(server_task, self.local_address[0], self.local_address[1])
+        server = await asyncio.start_server(server_task, "localhost", self.local_port)
 
         async with server:
-            await server.serve_forever()
+            try:
+                await server.serve_forever()
+            except CancelledError:
+                log.warning("Server task cancelled.")
+                server.close()
+                await server.wait_closed()
+                log.info("Server closed gracefully.")
+

@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import uuid
+from asyncio import CancelledError
 from typing import Literal
 
 from . import files
@@ -15,85 +16,107 @@ async def _close_writer(writer: asyncio.StreamWriter):
     :param writer:
     :return:
     """
-    if not writer.is_closing():
+
+    if writer.is_closing():
+        log.debug("Writer already closed.")
+    else:
+        log.debug("Closing writer.")
         writer.close()
         await writer.wait_closed()
 
 
-async def file_to_queue_task(queue: asyncio.Queue, file_path: str, polling_interval: int | float):
+async def file_to_queue_task(queue: asyncio.Queue, file_path: str, polling_interval: int | float, con_id: str = None):
     """ Coroutine to read data from a file and write the data into a queue.
     :param queue: The queue instance to write data to.
     :param file_path: The file path to read from.
     :param polling_interval: How often to poll the file.
+    :param con_id: The connection ID for this connection. Optional, only used for logging.
     :return: None
     """
-    loop = asyncio.get_running_loop()
+    try:
+        loop = asyncio.get_running_loop()
 
-    last_read = 0
-    last_stats = None
-    while True:
-        # Check how long it has been since we last tried to read the file.
-        time_since_last_read = loop.time() - last_read
-        # If it has been less than the polling interval,
-        if time_since_last_read <= polling_interval:
-            time_to_sleep = polling_interval - time_since_last_read
-            if time_to_sleep < 0:
-                log.critical(f"Why are we sleeping for {time_to_sleep}s?")
-            #log.debug(f"Sleeping for {time_to_sleep:0.3f}s to satisfy polling interval.")
-            await asyncio.sleep(time_to_sleep)
-        else:
-            data, stats = await loop.run_in_executor(None, files.try_read_from_file, file_path, last_stats)
-            last_read = loop.time()
-            # Recording the stat_result from the previous read allows us to save time by skipping
-            # the file read if it hasn't been changed.
-            last_stats = stats
-            if data != b"":
-                #log.debug(f"Received data, pushing to queue.")
-                await queue.put(data)
+        last_read = 0
+        last_stats = None
+        while True:
+            # Check how long it has been since we last tried to read the file.
+            time_since_last_read = loop.time() - last_read
+            # If it has been less than the polling interval,
+            if time_since_last_read <= polling_interval:
+                time_to_sleep = polling_interval - time_since_last_read
+                if time_to_sleep < 0:
+                    log.critical(f"Why are we sleeping for {time_to_sleep}s?")
+                #log.debug(f"Sleeping for {time_to_sleep:0.3f}s to satisfy polling interval.")
+                await asyncio.sleep(time_to_sleep)
             else:
-                #log.debug(f"Received nothing, yielding to other tasks.")
-                await asyncio.sleep(max(0, polling_interval - (loop.time() - last_read)))
+                data, stats = await loop.run_in_executor(None, files.try_read_from_file, file_path, last_stats)
+                last_read = loop.time()
+                # Recording the stat_result from the previous read allows us to save time by skipping
+                # the file read if it hasn't been changed.
+                last_stats = stats
+                if data != b"":
+                    #log.debug(f"Received data, pushing to queue.")
+                    await queue.put(data)
+                else:
+                    #log.debug(f"Received nothing, yielding to other tasks.")
+                    await asyncio.sleep(max(0, polling_interval - (loop.time() - last_read)))
+    except CancelledError:
+        log.warning(f"{con_id} file_to_queue_task is cancelled!")
 
 
-async def queue_to_file_task(queue: asyncio.Queue, file_path: str):
+async def queue_to_file_task(queue: asyncio.Queue, file_path: str, con_id: str = None):
     """ Coroutine to read data from a queue and write the data into a file.
     :param queue: The queue instance to read from.
     :param file_path: The file path to write to.
+    :param con_id: The connection ID for this connection. Optional, only used for logging.
     :return: None
     """
-    loop = asyncio.get_running_loop()
-    while True:
-        data = await queue.get()
-        await loop.run_in_executor(None, files.try_write_to_file, data, file_path)
+    try:
+        loop = asyncio.get_running_loop()
+        while True:
+            data = await queue.get()
+            await loop.run_in_executor(None, files.try_write_to_file, data, file_path)
+    except CancelledError:
+        log.warning(f"{con_id} queue_to_file_task is cancelled!")
 
 
-async def queue_to_writer_task(queue: asyncio.Queue, writer: asyncio.StreamWriter):
+async def queue_to_writer_task(queue: asyncio.Queue, writer: asyncio.StreamWriter, con_id: str = None):
     """ Coroutine to read data from a queue and write the data to a StreamWriter
     :param queue: The asyncio.Queue instance to read from.
     :param writer: The asyncio.StreamWriter instance to write to.
+    :param con_id: The connection ID for this connection. Optional, only used for logging.
     :return: None
     """
-    while True:
-        data = await queue.get()
-        writer.write(data)
-        await writer.drain()
+    try:
+        while True:
+            data = await queue.get()
+            writer.write(data)
+            await writer.drain()
+    except CancelledError:
+        log.warning(f"{con_id} queue_to_writer_task is cancelled, closing writer.")
+        await _close_writer(writer)
 
 
-async def reader_to_queue_task(queue: asyncio.Queue, reader: asyncio.StreamReader, n_bytes: int = 4096):
+async def reader_to_queue_task(queue: asyncio.Queue, reader: asyncio.StreamReader, n_bytes: int = 4096, con_id: str = None):
     """ Coroutine to read data from a StreamReader and write the data to a queue
     :param queue: The asyncio.Queue instance to write to.
     :param reader: The asyncio.StreamReader instance to read from.
+    :param n_bytes: The maximum number of bytes to read from StreamReader at once.
+    :param con_id: The connection ID for this connection. Optional, only used for logging.
     :return: None
     """
-    while True:
-        try:
-            data = await reader.read(n_bytes)
-        except ConnectionResetError:
-            break
-        # If we receive 0 bytes, connection is done/
-        if len(data) == 0:
-            break
-        await queue.put(data)
+    try:
+        while True:
+            try:
+                data = await reader.read(n_bytes)
+            except ConnectionResetError:
+                break
+            # If we receive 0 bytes, connection is done/
+            if len(data) == 0:
+                break
+            await queue.put(data)
+    except CancelledError:
+        log.warning(f"{con_id} reader_to_queue_task is cancelled.")
 
 
 async def file_forwarding_task(
@@ -125,11 +148,12 @@ async def file_forwarding_task(
     :param con_id: The ID for this connection. Passing an ID when you are the server raises an error.
     :return: None
     """
-    if (caller == "server") and (con_id is not None):
-        raise RuntimeError("Should not pass a value for con_id when running as the server!")
-
-    # Generate a random, unique ID for this connection if it is not provided.
-    con_id = str(uuid.uuid4()) if con_id is None else con_id
+    if caller == "server":
+        if con_id is not None:
+            raise RuntimeError("Should not pass a value for con_id when running as the server!")
+        # Generate a random, unique ID for this connection.
+        con_id = str(uuid.uuid4())
+        log.info(f"Creating new server connection for {con_id}")
 
     # To implement the above connections, we need to initialize four (4) coroutines/tasks
     # Task 1a - StreamReader -> Data Queue (local)
@@ -171,16 +195,28 @@ async def file_forwarding_task(
     ]
 
     # We will reach this point when the first task encounters an issue or completes.
-    completed, pending = await asyncio.wait(all_tasks, return_when=asyncio.FIRST_COMPLETED)
-    # At this point, we will cancel all remaining tasks.
-    log.debug("Cancelling tasks.")
-    for pend_t in pending:
-        pend_t.cancel()
-    # If we are the server, we should also clean up the files created by this connection.
-    if caller == "server":
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, cleanup_connection_files, tunnel_dir, con_id)
-    # Finally, close the writer down cleanly.
-    await _close_writer(writer)
-    # This file forwarding connection is now complete.
+    try:
+        completed, pending = await asyncio.wait(all_tasks, return_when=asyncio.FIRST_COMPLETED)
+        # At this point, we will cancel all remaining tasks.
+        log.debug(f"{con_id} Sending task cancellations for pending tasks.")
+        for pend_t in pending:
+            pend_t.cancel()
+        log.debug(f"{con_id} Waiting for pending tasks to exit.")
+        await asyncio.wait(pending)
+        log.debug(f"{con_id} Pending tasks completed.")
+    except CancelledError:
+        log.warning(f"{con_id} file_forwarding_task received hard cancellation.")
+        # If we got cancelled, try to clean up.
+        for task in all_tasks:
+            task.cancel()
+        log.debug(f"{con_id} Waiting for all tasks to exit.")
+        await asyncio.wait(all_tasks)
+        log.debug(f"{con_id} All tasks complete.")
+    finally:
+        # If we are the server, we should also clean up the files created by this connection.
+        if caller == "server":
+            log.info(f"{con_id} Attempting to clean up connection files.")
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, cleanup_connection_files, tunnel_dir, con_id)
+            log.info(f"{con_id} Cleaned up connection files successfully.")
 
