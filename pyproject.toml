@@ -1,0 +1,16 @@
+[project]
+name = "fileforward"
+version = "0.0.1"
+authors = [
+    {name = "Andrew Hill", email = "andrew.2.hill@cuanschutz.edu"}
+]
+
+[project.scripts]
+fileforward = "fileforward.runner:run"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["fileforward"]

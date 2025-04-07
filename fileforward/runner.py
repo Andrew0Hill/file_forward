@@ -2,7 +2,7 @@ import asyncio
 import argparse
 import logging
 from .log import initialize_logging
-from .file_forward import TunnelServer, TunnelClient
+from .fileforward import TunnelServer, TunnelClient
 
 
 def run():
