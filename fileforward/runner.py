@@ -1,8 +1,9 @@
-import asyncio
 import argparse
+import asyncio
 import logging
-from .log import initialize_logging
+
 from .fileforward import TunnelServer, TunnelClient
+from .log import initialize_logging
 
 
 def run():

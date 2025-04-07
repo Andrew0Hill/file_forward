@@ -1,6 +1,6 @@
 import glob
-import re
 import os
+import re
 
 CON_ID_RE = re.compile("(?P<con_id>.*?)\\.(local|remote)")
 

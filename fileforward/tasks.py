@@ -1,11 +1,11 @@
 import asyncio
 import logging
-import uuid
 import os
+import uuid
 from typing import Literal
 
-from .utils import cleanup_connection_files
 from . import files
+from .utils import cleanup_connection_files
 
 log = logging.getLogger(__name__)
 

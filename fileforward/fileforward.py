@@ -1,6 +1,6 @@
-import logging
 import asyncio
 import glob
+import logging
 import os
 from functools import partial
 
