@@ -1,12 +1,5 @@
-import logging
 import fcntl
 import time
-import glob
-import re
-import os
-
-
-CON_ID_RE = re.compile("(?P<con_id>.*?)\\.(local|remote)")
 
 
 def acquire_file_lock(f, retry_delay: float, max_retries: int):
@@ -30,21 +23,6 @@ def acquire_file_lock(f, retry_delay: float, max_retries: int):
 def release_file_lock(f):
     # Release the lock
     fcntl.flock(f, fcntl.LOCK_UN)
-
-
-async def close_writer(writer):
-    if not writer.is_closing():
-        writer.close()
-        await writer.wait_closed()
-
-
-# async def try_read(reader, n_bytes: int = 4096):
-#     try:
-#         data = await reader.read(n_bytes)
-#     except Exception as e:
-#         print(f"Read Exception: {e}")
-#         return b""
-#     return data
 
 
 def try_write_to_file(b: bytes, f_p: str, retry_delay: int = 0.05, max_retries: int = 10):
@@ -76,26 +54,4 @@ def try_read_from_file(f_p: str, retry_delay: int = 0.05, max_retries: int = 10)
 
         release_file_lock(f)
     return all_data
-
-
-def get_connections(tunnel_dir: str, ext: str):
-    cons = glob.glob(os.path.join(tunnel_dir, ext))
-
-    out_cons = set()
-    for con_p in cons:
-        con_file = os.path.split(con_p)[-1]
-        con_match = CON_ID_RE.match(con_file)
-        if con_match is None:
-            print(f"Unable to generate connection id for file {con_p}, please don't place files into the tunnel directory!")
-            continue
-        out_cons.add(con_match.group("con_id"))
-    return out_cons
-
-
-def get_local_connections(tunnel_dir: str):
-    return get_connections(tunnel_dir, "*.local")
-
-
-def get_remote_connections(tunnel_dir: str):
-    return get_connections(tunnel_dir, "*.remote")
 
