@@ -1,8 +1,11 @@
 import glob
+import logging
 import os
 import re
 
 CON_ID_RE = re.compile("(?P<con_id>.*?)\\.(local|remote)")
+
+log = logging.getLogger(__name__)
 
 
 def get_connections(tunnel_dir: str, ext: str):
@@ -13,7 +16,7 @@ def get_connections(tunnel_dir: str, ext: str):
         con_file = os.path.split(con_p)[-1]
         con_match = CON_ID_RE.match(con_file)
         if con_match is None:
-            print(f"Unable to generate connection id for file {con_p}, please don't place files into the tunnel directory!")
+            log.warning(f"{con_p} is not a valid connection file! Please don't place files into the tunnel directory, as it will degrade performance!")
             continue
         out_cons.add(con_match.group("con_id"))
     return out_cons

@@ -39,7 +39,7 @@ def try_write_to_file(b: bytes, f_p: str, retry_delay: int = 0.05, max_retries: 
 
         # Check that we wrote everything.
         if n_written != len(b):
-            print(f"Buffer was length {len(b)} but wrote {n_written}!")
+            log.warning(f"Buffer was length {len(b)} but wrote {n_written}!")
 
         release_file_lock(f)
 

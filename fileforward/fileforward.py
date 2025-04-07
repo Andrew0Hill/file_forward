@@ -50,8 +50,8 @@ class TunnelClient:
                 file_forward_task = asyncio.create_task(tasks.file_forwarding_task(reader, writer, tunnel_dir=self.tunnel_dir, caller="client", con_id=new_con, file_poll_int=self.file_poll_int), name=new_con)
                 file_forward_task.add_done_callback(self.remove_connection_by_id)
                 self.active_cons[new_con] = file_forward_task
-            except Exception as e:
-                log.info("Unable to connect to remote host, remote server may not be running yet?")
+            except Exception:
+                log.exception("Unable to connect to remote host, remote server may not be running yet?")
 
         for rm_con in removed_cons:
             log.info(f"{rm_con} Attempting to shut down old connection...")

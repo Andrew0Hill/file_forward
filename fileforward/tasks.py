@@ -173,7 +173,7 @@ async def file_forwarding_task(
     # We will reach this point when the first task encounters an issue or completes.
     completed, pending = await asyncio.wait(all_tasks, return_when=asyncio.FIRST_COMPLETED)
     # At this point, we will cancel all remaining tasks.
-    print("Cancelling tasks.")
+    log.debug("Cancelling tasks.")
     for pend_t in pending:
         pend_t.cancel()
     # If we are the server, we should also clean up the files created by this connection.
