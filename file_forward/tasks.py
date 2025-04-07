@@ -1,10 +1,13 @@
 import asyncio
-import time
+import logging
 import uuid
 import os
 from typing import Literal
 
+from .utils import cleanup_connection_files
 from . import files
+
+log = logging.getLogger(__name__)
 
 
 async def _close_writer(writer: asyncio.StreamWriter):
@@ -17,7 +20,7 @@ async def _close_writer(writer: asyncio.StreamWriter):
         await writer.wait_closed()
 
 
-async def file_to_queue_task(queue: asyncio.Queue, file_path: str, polling_interval: float = 0.01):
+async def file_to_queue_task(queue: asyncio.Queue, file_path: str, polling_interval: int | float):
     """ Coroutine to read data from a file and write the data into a queue.
     :param queue: The queue instance to write data to.
     :param file_path: The file path to read from.
@@ -27,20 +30,29 @@ async def file_to_queue_task(queue: asyncio.Queue, file_path: str, polling_inter
     loop = asyncio.get_running_loop()
 
     last_read = 0
+    last_stats = None
     while True:
-        time_since_last_read = time.perf_counter() - last_read
+        # Check how long it has been since we last tried to read the file.
+        time_since_last_read = loop.time() - last_read
+        # If it has been less than the polling interval,
         if time_since_last_read <= polling_interval:
             time_to_sleep = polling_interval - time_since_last_read
-            #print(f"Sleeping for {time_to_sleep:0.3f} to avoid polling too quickly.")
+            if time_to_sleep < 0:
+                log.critical(f"Why are we sleeping for {time_to_sleep}s?")
+            #log.debug(f"Sleeping for {time_to_sleep:0.3f}s to satisfy polling interval.")
             await asyncio.sleep(time_to_sleep)
         else:
-            #print("Polling file.")
-            data = await loop.run_in_executor(None, files.try_read_from_file, file_path)
-            last_read = time.perf_counter()
+            data, stats = await loop.run_in_executor(None, files.try_read_from_file, file_path, last_stats)
+            last_read = loop.time()
+            # Recording the stat_result from the previous read allows us to save time by skipping
+            # the file read if it hasn't been changed.
+            last_stats = stats
             if data != b"":
+                #log.debug(f"Received data, pushing to queue.")
                 await queue.put(data)
             else:
-                await asyncio.sleep(0)
+                #log.debug(f"Received nothing, yielding to other tasks.")
+                await asyncio.sleep(max(0, polling_interval - (loop.time() - last_read)))
 
 
 async def queue_to_file_task(queue: asyncio.Queue, file_path: str):
@@ -84,7 +96,14 @@ async def reader_to_queue_task(queue: asyncio.Queue, reader: asyncio.StreamReade
         await queue.put(data)
 
 
-async def file_forwarding_task(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, tunnel_dir: str, caller: Literal["client", "server"], con_id: str = None):
+async def file_forwarding_task(
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+        tunnel_dir: str,
+        file_poll_int: int | float,
+        caller: Literal["client", "server"],
+        con_id: str = None
+):
     """ Function accepting a StreamReader and StreamWriter
     sets up the required coroutines to send and receive information via file
     forwarding.
@@ -100,6 +119,7 @@ async def file_forwarding_task(reader: asyncio.StreamReader, writer: asyncio.Str
     :param reader: StreamReader instance for the current connection.
     :param writer: StreamWriter instance for the current connection.
     :param tunnel_dir: The directory which will hold the connection files.
+    :param file_poll_int: How often to perform I/O (i.e. call os.stat or open()) to check for file changes.
     :param caller: Used to route connections correctly depending on
     the function is being called from the client or server.
     :param con_id: The ID for this connection. Passing an ID when you are the server raises an error.
@@ -143,7 +163,7 @@ async def file_forwarding_task(reader: asyncio.StreamReader, writer: asyncio.Str
         asyncio.create_task(queue_to_file_task(queue=outgoing_queue, file_path=outgoing_fpath),
                             name=f"{con_id}_queue_to_file"),
         # Task 2a
-        asyncio.create_task(file_to_queue_task(queue=incoming_queue, file_path=incoming_fpath),
+        asyncio.create_task(file_to_queue_task(queue=incoming_queue, file_path=incoming_fpath, polling_interval=file_poll_int),
                             name=f"{con_id}_file_to_queue"),
         # Task 2b
         asyncio.create_task(queue_to_writer_task(queue=incoming_queue, writer=writer),
@@ -159,7 +179,7 @@ async def file_forwarding_task(reader: asyncio.StreamReader, writer: asyncio.Str
     # If we are the server, we should also clean up the files created by this connection.
     if caller == "server":
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, cleanup_connection_files_task, tunnel_dir, con_id)
+        await loop.run_in_executor(None, cleanup_connection_files, tunnel_dir, con_id)
     # Finally, close the writer down cleanly.
     await _close_writer(writer)
     # This file forwarding connection is now complete.
