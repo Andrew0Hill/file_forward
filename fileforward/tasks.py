@@ -35,10 +35,29 @@ async def file_to_queue_task(queue: asyncio.Queue, file_path: str, polling_inter
     """
     try:
         loop = asyncio.get_running_loop()
-
+        # Last time we read from the file
         last_read = 0
+        # Last known stats of the file.
         last_stats = None
+        # How often to print stats?
+        print_stat_interval = 30
+        # When did we last print stats?
+        first_stat_print = loop.time()
+        last_stat_print = first_stat_print
+        # How many read attempts?
+        n_read_attempts = 0
+        # How many successful reads?
+        n_success_reads = 0
+        # How much throughput?
+        n_bytes_read = 0
         while True:
+            cur_time = loop.time()
+            time_since_last_stat_print = cur_time - last_stat_print
+            if time_since_last_stat_print >= print_stat_interval:
+                tput = n_bytes_read/(1000 * (cur_time - first_stat_print))
+                avg_read = n_bytes_read/(1000 * n_success_reads) if n_success_reads > 0 else 0
+                log.info(f"{con_id} file_to_queue_task: Total/Avg Transfer Size {n_bytes_read/1000:0.2f}KB/{avg_read:0.2f}KB {n_success_reads}/{n_read_attempts} reads/checks. Throughput: {tput:0.2f} KB/sec.")
+                last_stat_print = cur_time
             # Check how long it has been since we last tried to read the file.
             time_since_last_read = loop.time() - last_read
             # If it has been less than the polling interval,
@@ -51,8 +70,12 @@ async def file_to_queue_task(queue: asyncio.Queue, file_path: str, polling_inter
                 # Recording the stat_result from the previous read allows us to save time by skipping
                 # the file read if it hasn't been changed.
                 last_stats = stats
+
+                n_read_attempts += 1
                 # If we read nothing from the file, we don't have anything to put in the queue.
-                if data != b"":
+                if data is not None:
+                    n_bytes_read += len(data)
+                    n_success_reads += 1
                     await queue.put(data)
                 else:
                     await asyncio.sleep(max(0, polling_interval - (loop.time() - last_read)))

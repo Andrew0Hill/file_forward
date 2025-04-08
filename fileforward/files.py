@@ -67,7 +67,7 @@ def try_read_from_file(f_p: str, l_stats: os.stat_result = None, retry_delay: in
             log.warning("mtime has changed, but size is 0!")
 
         if ret_early:
-            return b"", p_stats
+            return None, p_stats
 
     with open(f_p, "ab+") as f:
         if not acquire_file_lock(f, retry_delay=retry_delay, max_retries=max_retries):
@@ -84,7 +84,7 @@ def try_read_from_file(f_p: str, l_stats: os.stat_result = None, retry_delay: in
             # Truncate the file
             f.truncate(0)
         else:
-            all_data = b""
+            all_data = None
         # Get the stats of the file *after* we've read and truncated to ensure
         # that the mtime should be the same if the file has not been modified by
         # the other process.

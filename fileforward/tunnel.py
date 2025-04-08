@@ -28,12 +28,12 @@ class TunnelClient:
 
     def remove_connection(self, t):
         task_name = t.get_name()
-        log.info(f"{task_name} Attempting to remove completed connection...")
+        log.debug(f"{task_name} Attempting to remove completed connection...")
         if task_name in self.active_cons:
             del self.active_cons[task_name]
-            log.info(f"{task_name} Connection removed from set.")
+            log.debug(f"{task_name} Connection removed from set.")
         else:
-            log.info(f"{task_name} Connection id not found in set!!!!")
+            log.debug(f"{task_name} Connection not found in set, must have already been removed.")
 
     async def poll_for_connections(self):
         local_cons = utils.get_local_connections(self.tunnel_dir)
