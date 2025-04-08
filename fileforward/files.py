@@ -13,7 +13,7 @@ def acquire_file_lock(f, retry_delay: float, max_retries: int):
     while (n_tries < max_retries) and (not have_lock):
         try:
             # Try to obtain an exclusive lock on this file with a non-blocking call.
-            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.lockf(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
             # If we made it here we have the lock.
             have_lock = True
         except OSError:
@@ -26,7 +26,7 @@ def acquire_file_lock(f, retry_delay: float, max_retries: int):
 
 def release_file_lock(f):
     # Release the lock
-    fcntl.flock(f, fcntl.LOCK_UN)
+    fcntl.lockf(f, fcntl.LOCK_UN)
 
 
 def try_write_to_file(b: bytes, f_p: str, retry_delay: int = 0.05, max_retries: int = 10):
