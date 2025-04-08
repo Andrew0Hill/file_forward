@@ -5,8 +5,8 @@ import os
 from asyncio import CancelledError
 from functools import partial
 
-from . import tasks
-from . import utils
+from fileforward import tasks
+from fileforward import utils
 
 log = logging.getLogger(__name__)
 
