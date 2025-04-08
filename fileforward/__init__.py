@@ -1,1 +1,1 @@
-from .fileforward import TunnelClient, TunnelServer
+from fileforward.tunnel import TunnelClient, TunnelServer

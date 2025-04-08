@@ -26,7 +26,7 @@ class TunnelClient:
     def con_id_to_path_name(con_paths):
         return {os.path.split(p)[-1]: p for p in con_paths}
 
-    def remove_connection_by_id(self, t):
+    def remove_connection(self, t):
         task_name = t.get_name()
         log.info(f"{task_name} Attempting to remove completed connection...")
         if task_name in self.active_cons:
@@ -36,7 +36,6 @@ class TunnelClient:
             log.info(f"{task_name} Connection id not found in set!!!!")
 
     async def poll_for_connections(self):
-        log.debug("Checking for new forwarded connections...")
         local_cons = utils.get_local_connections(self.tunnel_dir)
 
         # Any cons that are in the directory but *not* in our running set are new.
@@ -49,7 +48,7 @@ class TunnelClient:
             try:
                 reader, writer = await asyncio.open_connection("localhost", self.remote_port)
                 file_forward_task = asyncio.create_task(tasks.file_forwarding_task(reader, writer, tunnel_dir=self.tunnel_dir, caller="client", con_id=new_con, file_poll_int=self.file_poll_int), name=new_con)
-                file_forward_task.add_done_callback(self.remove_connection_by_id)
+                file_forward_task.add_done_callback(self.remove_connection)
                 self.active_cons[new_con] = file_forward_task
             except OSError:
                 log.error(f"{new_con} Unable to connect to remote host, is anything running on port {self.remote_port}?")

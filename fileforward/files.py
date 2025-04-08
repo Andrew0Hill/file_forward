@@ -2,26 +2,27 @@ import fcntl
 import logging
 import os
 import time
+from typing import Literal
 
 log = logging.getLogger(__name__)
 
 
 def acquire_file_lock(f, retry_delay: float, max_retries: int):
-    have_lock = False
     n_tries = 0
     # While we are below the retry threshold and we don't have the lock.
-    while (n_tries < max_retries) and (not have_lock):
+    while n_tries < max_retries:
         try:
             # Try to obtain an exclusive lock on this file with a non-blocking call.
             fcntl.lockf(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
             # If we made it here we have the lock.
-            have_lock = True
+            return True
         except OSError:
             # If we failed to get the lock, increment counter.
             n_tries += 1
             # Sleep (yield to other tasks) and try again later.
             time.sleep(retry_delay)
-    return have_lock
+    # If we make it through the loop, we failed to acquire the lock.
+    return False
 
 
 def release_file_lock(f):
@@ -45,9 +46,10 @@ def try_write_to_file(b: bytes, f_p: str, retry_delay: int = 0.05, max_retries: 
 
 
 def try_read_from_file(f_p: str, l_stats: os.stat_result = None, retry_delay: int = 0.05, max_retries: int = 10):
-    # We use a few checks to prevent opening/reading the file as much as possible.
-    #   1. If we have read this file before, check if the m_time is different.
-    #   2. If the file has st_size==0, skip reading.
+
+    # If l_stats is not None, we know that the file should exist
+    # (so safe to call os.lstat here) since we've called it at
+    # least once before.
     if l_stats is not None:
         p_stats = os.lstat(f_p)
         ret_early = False
@@ -73,13 +75,16 @@ def try_read_from_file(f_p: str, l_stats: os.stat_result = None, retry_delay: in
         # File descriptor
         fd = f.fileno()
 
-        # Read from file
-        f.seek(0)
-        all_data = f.read()
-
-        # Truncate the file
-        f.truncate(0)
-
+        # If there is something to read
+        if f.tell() != 0:
+            # Move to the start
+            f.seek(0)
+            # Read the data
+            all_data = f.read()
+            # Truncate the file
+            f.truncate(0)
+        else:
+            all_data = b""
         # Get the stats of the file *after* we've read and truncated to ensure
         # that the mtime should be the same if the file has not been modified by
         # the other process.

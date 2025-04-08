@@ -5,8 +5,8 @@ import uuid
 from asyncio import CancelledError
 from typing import Literal
 
-from . import files
-from .utils import cleanup_connection_files
+from fileforward.files import try_read_from_file, try_write_to_file
+from fileforward.utils import cleanup_connection_files
 
 log = logging.getLogger(__name__)
 
@@ -44,24 +44,20 @@ async def file_to_queue_task(queue: asyncio.Queue, file_path: str, polling_inter
             # If it has been less than the polling interval,
             if time_since_last_read <= polling_interval:
                 time_to_sleep = polling_interval - time_since_last_read
-                if time_to_sleep < 0:
-                    log.critical(f"Why are we sleeping for {time_to_sleep}s?")
-                #log.debug(f"Sleeping for {time_to_sleep:0.3f}s to satisfy polling interval.")
                 await asyncio.sleep(time_to_sleep)
             else:
-                data, stats = await loop.run_in_executor(None, files.try_read_from_file, file_path, last_stats)
+                data, stats = await loop.run_in_executor(None, try_read_from_file, file_path, last_stats)
                 last_read = loop.time()
                 # Recording the stat_result from the previous read allows us to save time by skipping
                 # the file read if it hasn't been changed.
                 last_stats = stats
+                # If we read nothing from the file, we don't have anything to put in the queue.
                 if data != b"":
-                    #log.debug(f"Received data, pushing to queue.")
                     await queue.put(data)
                 else:
-                    #log.debug(f"Received nothing, yielding to other tasks.")
                     await asyncio.sleep(max(0, polling_interval - (loop.time() - last_read)))
     except CancelledError:
-        log.warning(f"{con_id} file_to_queue_task is cancelled!")
+        log.warning(f"{con_id} file_to_queue_task is cancelled.")
 
 
 async def queue_to_file_task(queue: asyncio.Queue, file_path: str, con_id: str = None):
@@ -75,9 +71,9 @@ async def queue_to_file_task(queue: asyncio.Queue, file_path: str, con_id: str =
         loop = asyncio.get_running_loop()
         while True:
             data = await queue.get()
-            await loop.run_in_executor(None, files.try_write_to_file, data, file_path)
+            await loop.run_in_executor(None, try_write_to_file, data, file_path)
     except CancelledError:
-        log.warning(f"{con_id} queue_to_file_task is cancelled!")
+        log.warning(f"{con_id} queue_to_file_task is cancelled.")
 
 
 async def queue_to_writer_task(queue: asyncio.Queue, writer: asyncio.StreamWriter, con_id: str = None):
@@ -181,17 +177,13 @@ async def file_forwarding_task(
     # List to hold the tasks.
     all_tasks = [
         # Task 1a
-        asyncio.create_task(reader_to_queue_task(queue=outgoing_queue, reader=reader),
-                            name=f"{con_id}_read_to_queue"),
+        asyncio.create_task(reader_to_queue_task(queue=outgoing_queue, reader=reader, con_id=con_id), name=f"{con_id}_read_to_queue"),
         # Task 1b
-        asyncio.create_task(queue_to_file_task(queue=outgoing_queue, file_path=outgoing_fpath),
-                            name=f"{con_id}_queue_to_file"),
+        asyncio.create_task(queue_to_file_task(queue=outgoing_queue, file_path=outgoing_fpath, con_id=con_id), name=f"{con_id}_queue_to_file"),
         # Task 2a
-        asyncio.create_task(file_to_queue_task(queue=incoming_queue, file_path=incoming_fpath, polling_interval=file_poll_int),
-                            name=f"{con_id}_file_to_queue"),
+        asyncio.create_task(file_to_queue_task(queue=incoming_queue, file_path=incoming_fpath, polling_interval=file_poll_int, con_id=con_id), name=f"{con_id}_file_to_queue"),
         # Task 2b
-        asyncio.create_task(queue_to_writer_task(queue=incoming_queue, writer=writer),
-                            name=f"{con_id}_queue_to_write")
+        asyncio.create_task(queue_to_writer_task(queue=incoming_queue, writer=writer, con_id=con_id), name=f"{con_id}_queue_to_write")
     ]
 
     # We will reach this point when the first task encounters an issue or completes.

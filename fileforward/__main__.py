@@ -1,3 +1,3 @@
-from .runner import run
+from fileforward.runner import run
 
 run()
