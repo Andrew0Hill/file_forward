@@ -6,6 +6,8 @@ import math
 import random
 from typing import Literal
 
+from fileforward.utils import memory_str
+
 log = logging.getLogger(__name__)
 
 
@@ -42,7 +44,7 @@ def acquire_file_lock(f, max_retries: int = 11):
             if n_tries > 2:
                 log.warning(f"Lock contention, tried to acquire {n_tries} times!")
             # Sleep with an exponential backoff.
-            time.sleep(random.uniform(0, 1 << n_tries)/1000)
+            time.sleep(random.uniform(0, 1 << n_tries)/10)
     # If we make it through the loop, we failed to acquire the lock.
     return False
 
@@ -64,6 +66,7 @@ def try_write_to_file(b: bytes, f_p: str, max_retries: int = 11):
     lock is not available. Default: 11 (~1s of waiting on average).
     :return: None
     """
+    write_time_start = time.perf_counter()
     with open(f_p, "ab", buffering=0) as f:
         if not acquire_file_lock(f, max_retries=max_retries):
             raise RuntimeError(f"Unable to acquire lock for '{f_p}'.")
@@ -80,6 +83,8 @@ def try_write_to_file(b: bytes, f_p: str, max_retries: int = 11):
 
         # Release the lock.
         release_file_lock(f)
+    elapsed = time.perf_counter() - write_time_start
+    log.debug(f"Elapsed write time {memory_str(n_written)} in {elapsed * 1000:0.3f}ms")
 
 
 def try_read_from_file(f_p: str, l_stats: os.stat_result = None, max_retries: int = 11) -> tuple[bytes | None, os.stat_result]:
@@ -95,6 +100,7 @@ def try_read_from_file(f_p: str, l_stats: os.stat_result = None, max_retries: in
     # If l_stats is not None, we know that the file should exist
     # (so safe to call os.lstat here) since we've called it at
     # least once before.
+    read_start_time = time.perf_counter()
     if l_stats is not None:
         p_stats = os.lstat(f_p)
         ret_early = False
@@ -111,6 +117,9 @@ def try_read_from_file(f_p: str, l_stats: os.stat_result = None, max_retries: in
             log.warning("mtime has changed, but size is 0!")
 
         if ret_early:
+            # Get elapsed read time
+            elapsed = time.perf_counter() - read_start_time
+            log.debug(f"Elapsed read time (skip): {elapsed*1000:0.3f}ms")
             return None, p_stats
 
     # Open file in append mode for writing.
@@ -143,6 +152,12 @@ def try_read_from_file(f_p: str, l_stats: os.stat_result = None, max_retries: in
         # Release the lock
         release_file_lock(f)
 
+    # Get elapsed read time
+    elapsed = time.perf_counter() - read_start_time
+    if all_data is not None:
+        log.debug(f"Elapsed read time (hit): {memory_str(len(all_data))} in {elapsed*1000:0.3f}ms")
+    else:
+        log.debug(f"Elapsed read tipe (no data): {elapsed*1000:0.3f}ms")
     # Return data and stats.
     return all_data, stats
 
