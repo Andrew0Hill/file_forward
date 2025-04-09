@@ -64,12 +64,15 @@ def try_write_to_file(b: bytes, f_p: str, max_retries: int = 11):
     lock is not available. Default: 11 (~1s of waiting on average).
     :return: None
     """
-    with open(f_p, "ab") as f:
+    with open(f_p, "ab", buffering=0) as f:
         if not acquire_file_lock(f, max_retries=max_retries):
             raise RuntimeError(f"Unable to acquire lock for '{f_p}'.")
 
         # Write to the file
         n_written = f.write(b)
+
+        # Immediately fsync
+        os.fsync(f.fileno())
 
         # Check that we wrote everything.
         if n_written != len(b):
@@ -111,7 +114,7 @@ def try_read_from_file(f_p: str, l_stats: os.stat_result = None, max_retries: in
             return None, p_stats
 
     # Open file in append mode for writing.
-    with open(f_p, "ab+") as f:
+    with open(f_p, "ab+", buffering=0) as f:
         if not acquire_file_lock(f, max_retries=max_retries):
             raise RuntimeError(f"Unable to acquire lock for '{f_p}'.")
 
@@ -126,6 +129,8 @@ def try_read_from_file(f_p: str, l_stats: os.stat_result = None, max_retries: in
             all_data = f.read()
             # Truncate the file
             f.truncate(0)
+            # Immediately fsync
+            os.fsync(fd)
         # Otherwise, we will return None.
         else:
             all_data = None
