@@ -83,8 +83,8 @@ def try_write_to_file(b: bytes, f_p: str, max_retries: int = 11):
 
         # Release the lock.
         release_file_lock(f)
-    elapsed = time.perf_counter() - write_time_start
-    log.debug(f"Elapsed write time {memory_str(n_written)} in {elapsed * 1000:0.3f}ms")
+    # elapsed = time.perf_counter() - write_time_start
+    # log.debug(f"Elapsed write time {memory_str(n_written)} in {elapsed * 1000:0.3f}ms")
 
 
 def try_read_from_file(f_p: str, l_stats: os.stat_result = None, max_retries: int = 11) -> tuple[bytes | None, os.stat_result]:
@@ -118,8 +118,8 @@ def try_read_from_file(f_p: str, l_stats: os.stat_result = None, max_retries: in
 
         if ret_early:
             # Get elapsed read time
-            elapsed = time.perf_counter() - read_start_time
-            log.debug(f"Elapsed read time (skip): {elapsed*1000:0.3f}ms")
+            # elapsed = time.perf_counter() - read_start_time
+            # log.debug(f"Elapsed read time (skip): {elapsed*1000:0.3f}ms")
             return None, p_stats
 
     # Open file in append mode for writing.
@@ -153,11 +153,11 @@ def try_read_from_file(f_p: str, l_stats: os.stat_result = None, max_retries: in
         release_file_lock(f)
 
     # Get elapsed read time
-    elapsed = time.perf_counter() - read_start_time
-    if all_data is not None:
-        log.debug(f"Elapsed read time (hit): {memory_str(len(all_data))} in {elapsed*1000:0.3f}ms")
-    else:
-        log.debug(f"Elapsed read tipe (no data): {elapsed*1000:0.3f}ms")
+    # elapsed = time.perf_counter() - read_start_time
+    # if all_data is not None:
+    #     log.debug(f"Elapsed read time (hit): {memory_str(len(all_data))} in {elapsed*1000:0.3f}ms")
+    # else:
+    #     log.debug(f"Elapsed read tipe (no data): {elapsed*1000:0.3f}ms")
     # Return data and stats.
     return all_data, stats
 

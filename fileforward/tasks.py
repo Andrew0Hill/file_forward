@@ -116,7 +116,7 @@ async def queue_to_writer_task(queue: asyncio.Queue, writer: asyncio.StreamWrite
         await _close_writer(writer=writer, con_id=con_id)
 
 
-async def reader_to_queue_task(queue: asyncio.Queue, reader: asyncio.StreamReader, n_bytes: int = 4096, con_id: str = None):
+async def reader_to_queue_task(queue: asyncio.Queue, reader: asyncio.StreamReader, n_bytes: int = int(1e6), con_id: str = None):
     """ Coroutine to read data from a StreamReader and write the data to a queue
     :param queue: The asyncio.Queue instance to write to.
     :param reader: The asyncio.StreamReader instance to read from.
