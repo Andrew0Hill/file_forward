@@ -99,8 +99,8 @@ def try_read_from_file(f_p: str, l_stats: os.stat_result = None, max_retries: in
         # If file is unmodified (same mtime), we haven't received anything.
         if p_stats.st_mtime == l_stats.st_mtime:
             ret_early = True
-            if p_stats.st_size != 0:
-                log.warning(f"st_mtime unchanged, but has content (st_size={p_stats.st_size}). This shouldn't happen!")
+            if p_stats.st_size != l_stats.st_size:
+                log.warning(f"st_mtime unchanged, but different content sizes (previous={p_stats.st_size}, current={l_stats.st_size}). This shouldn't happen!")
         # We would expect that if the mtime *has* changed, that there should also be content for us to read.
         # If this isn't the case, print a warning.
         elif p_stats.st_size == 0:
