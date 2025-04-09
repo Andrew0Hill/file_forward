@@ -1,8 +1,10 @@
-# FileForward: A python utility for forwarding TCP traffic via an HPC shared filesystems.
+# FileForward: A python utility for forwarding TCP traffic via an HPC shared filesystem.
 
 This is a Python-based client/server utility for forwarding TCP traffic via a shared/networked filesystem (like on an HPC system).
 
-Why? See '[Why does this exist?](#why-does-this-exist)'. In short, it enables access to web-based interfaces like JupyterLab, RStudio, etc. running in jobs on HPC compute nodes.
+Why? See '[Why does this exist?](#why-does-this-exist)'. 
+
+In short, it enables access to web-based interfaces like JupyterLab, RStudio, etc. running in jobs on HPC compute nodes.
 Although I built it for this very specific use-case, it should theoretically allow you to forward arbitrary TCP traffic to/from a web service running on a compute node.
 
 Before using, please read the '[Why does this exist?](#why-does-this-exist)' and '[Should I use this?](#should-i-use-this)'
@@ -122,14 +124,16 @@ If SSH tunneling *doesn't* work on your system, then feel free to give this a tr
 
 ## Alternatives
 
+I will keep this section updated with any alternatives projects that have similar functionality.
+
 [FileTunnel](https://github.com/fiddyschmitt/File-Tunnel) - Seems like a much more mature (and likely more performant) solution to this problem.
 
 ## Caveats and Disclaimers
-- I wrote this mostly as a way to get more comfortable with Python's `asyncio` capabilities. This type of utility would probably be better implemented in a more performant language, and indeed there are alternatives which are likely much better if you are interested in raw performance (See [Alternatives](#alternatives)).
+- I wrote this mostly as a way to get more comfortable with Python's `asyncio` capabilities. This type of utility would probably be better implemented in a more performant language, and indeed there are other projects (See [Alternatives](#alternatives)) which are likely more robust/mature/performant than this tool.
   - In my testing, performance is slow(er than SSH) but usable for things like JupyterLab. I have not tested it for any high-traffic use-cases.
-- There are various parameters which you can tweak (polling rates, lock backoff attempts, etc) that may improve performance. I've set the defaults at what I think are reasonable values, but I haven't done extensive I/O testing, so I may change them in the future.
+- There are various parameters which you can tweak (polling rates, lock acquisition backoff attempts, etc.) that may improve performance. I've set the defaults at what I think are reasonable values, but I haven't done extensive I/O impact testing, so I may change them in the future.
 - Network file systems are not really intended for this type of thing.
-  - If you do change the default parameter values, please try to choose values that are respectful of the shared resource (Please don't blame me if your sysadmin yells at you).  
+  - If you do change the default parameter values, please try to choose values that are respectful of the shared resource (and please don't blame me if your sysadmin yells at you).  
 
 
 
