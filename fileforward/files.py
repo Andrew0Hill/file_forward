@@ -9,19 +9,22 @@ from typing import Literal
 log = logging.getLogger(__name__)
 
 
-def acquire_file_lock(f, max_retries: int):
+def acquire_file_lock(f, max_retries: int = 11):
     """ This function attempts to acquire an exclusive lockf() lock
     on the target file.
 
     If the first lock attempt fails, we block and retry with a binary
     exponential backoff.
 
+    The delays are in ms, so 1st retry waits randomly [0, 2]ms, the
+    second between [0,4]ms, etc.
+
     This function is synchronous and blocks for I/O and to sleep
     if the lock is not available, so should only be called
     from a non-event thread to avoid blocking other connections.
 
     :param f: File to lock.
-    :param max_retries: Number of retries for locking.
+    :param max_retries: Number of retries for locking. Default: 11 (~1s of waiting on average).
     :return: True if lock was acquired, False otherwise.
     """
     n_tries = 0
@@ -35,8 +38,11 @@ def acquire_file_lock(f, max_retries: int):
         except OSError:
             # If we failed to get the lock, increment counter.
             n_tries += 1
+            # Log some warnings if we have lock contention.
+            if n_tries > 2:
+                log.warning(f"Lock contention, tried to acquire {n_tries} times!")
             # Sleep with an exponential backoff.
-            time.sleep(random.uniform(0, 1 << n_tries))
+            time.sleep(random.uniform(0, 1 << n_tries)/1000)
     # If we make it through the loop, we failed to acquire the lock.
     return False
 
@@ -51,10 +57,11 @@ def try_write_to_file(b: bytes, f_p: str, max_retries: int = 11):
 
     This function performs synchronous I/O, so should only be called
     from a separate (non-event) thread.
+
     :param b: Byte data to write to file.
     :param f_p: Name of file to write to.
     :param max_retries: Number of times to retry lock acquisition if
-    lock is not available
+    lock is not available. Default: 11 (~1s of waiting on average).
     :return: None
     """
     with open(f_p, "ab") as f:
@@ -72,7 +79,7 @@ def try_write_to_file(b: bytes, f_p: str, max_retries: int = 11):
         release_file_lock(f)
 
 
-def try_read_from_file(f_p: str, l_stats: os.stat_result = None, max_retries: int = 11) -> tuple[bytes, os.stat_result]:
+def try_read_from_file(f_p: str, l_stats: os.stat_result = None, max_retries: int = 11) -> tuple[bytes | None, os.stat_result]:
     """ Tries to read data from a file.
 
     This function performs synchronous I/O, so should only be called

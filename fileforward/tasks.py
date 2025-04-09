@@ -11,16 +11,16 @@ from fileforward.utils import cleanup_connection_files, memory_str
 log = logging.getLogger(__name__)
 
 
-async def _close_writer(writer: asyncio.StreamWriter):
+async def _close_writer(writer: asyncio.StreamWriter, con_id: str = None):
     """ Helper function to cleanly close a StreamWriter.
     :param writer: The StreamWriter to close.
     :return: None
     """
 
     if writer.is_closing():
-        log.debug("Writer already closed.")
+        log.debug(f"{con_id} Writer already closed.")
     else:
-        log.debug("Closing writer.")
+        log.debug(f"{con_id} Closing writer.")
         writer.close()
         await writer.wait_closed()
 
@@ -113,7 +113,7 @@ async def queue_to_writer_task(queue: asyncio.Queue, writer: asyncio.StreamWrite
             await writer.drain()
     except CancelledError:
         log.info(f"{con_id} queue_to_writer_task is cancelled, closing writer.")
-        await _close_writer(writer)
+        await _close_writer(writer=writer, con_id=con_id)
 
 
 async def reader_to_queue_task(queue: asyncio.Queue, reader: asyncio.StreamReader, n_bytes: int = 4096, con_id: str = None):
