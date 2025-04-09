@@ -4,8 +4,7 @@ This is a Python-based client/server utility for forwarding TCP traffic via a sh
 
 Why? See '[Why does this exist?](#why-does-this-exist)'. 
 
-In short, it enables access to web-based interfaces like JupyterLab, RStudio, etc. running in jobs on HPC compute nodes.
-Although I built it for this very specific use-case, it should theoretically allow you to forward arbitrary TCP traffic to/from a web service running on a compute node.
+Although it is intended for an HPC-specific use case, it should theoretically allow you to forward arbitrary TCP traffic between computers connected to the same shared filesystem.
 
 > [!NOTE]
 > Before using, please read the '[Should I use this?](#should-i-use-this)' and '[Caveats and Disclaimers](#caveats-and-disclaimers)' sections.
