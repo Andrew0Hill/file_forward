@@ -2,12 +2,28 @@ import fcntl
 import logging
 import os
 import time
+import math
+import random
 from typing import Literal
 
 log = logging.getLogger(__name__)
 
 
-def acquire_file_lock(f, retry_delay: float, max_retries: int):
+def acquire_file_lock(f, max_retries: int):
+    """ This function attempts to acquire an exclusive lockf() lock
+    on the target file.
+
+    If the first lock attempt fails, we block and retry with a binary
+    exponential backoff.
+
+    This function is synchronous and blocks for I/O and to sleep
+    if the lock is not available, so should only be called
+    from a non-event thread to avoid blocking other connections.
+
+    :param f: File to lock.
+    :param max_retries: Number of retries for locking.
+    :return: True if lock was acquired, False otherwise.
+    """
     n_tries = 0
     # While we are below the retry threshold and we don't have the lock.
     while n_tries < max_retries:
@@ -19,8 +35,8 @@ def acquire_file_lock(f, retry_delay: float, max_retries: int):
         except OSError:
             # If we failed to get the lock, increment counter.
             n_tries += 1
-            # Sleep (yield to other tasks) and try again later.
-            time.sleep(retry_delay)
+            # Sleep with an exponential backoff.
+            time.sleep(random.uniform(0, 1 << n_tries))
     # If we make it through the loop, we failed to acquire the lock.
     return False
 
@@ -30,9 +46,19 @@ def release_file_lock(f):
     fcntl.lockf(f, fcntl.LOCK_UN)
 
 
-def try_write_to_file(b: bytes, f_p: str, retry_delay: int = 0.05, max_retries: int = 10):
+def try_write_to_file(b: bytes, f_p: str, max_retries: int = 11):
+    """ Tries to write data to a file.
+
+    This function performs synchronous I/O, so should only be called
+    from a separate (non-event) thread.
+    :param b: Byte data to write to file.
+    :param f_p: Name of file to write to.
+    :param max_retries: Number of times to retry lock acquisition if
+    lock is not available
+    :return: None
+    """
     with open(f_p, "ab") as f:
-        if not acquire_file_lock(f, retry_delay=retry_delay, max_retries=max_retries):
+        if not acquire_file_lock(f, max_retries=max_retries):
             raise RuntimeError(f"Unable to acquire lock for '{f_p}'.")
 
         # Write to the file
@@ -40,13 +66,22 @@ def try_write_to_file(b: bytes, f_p: str, retry_delay: int = 0.05, max_retries: 
 
         # Check that we wrote everything.
         if n_written != len(b):
-            log.warning(f"Buffer was length {len(b)} but wrote {n_written}!")
+            log.critical(f"Buffer was length {len(b)} but wrote {n_written}!")
 
+        # Release the lock.
         release_file_lock(f)
 
 
-def try_read_from_file(f_p: str, l_stats: os.stat_result = None, retry_delay: int = 0.05, max_retries: int = 10):
+def try_read_from_file(f_p: str, l_stats: os.stat_result = None, max_retries: int = 11) -> tuple[bytes, os.stat_result]:
+    """ Tries to read data from a file.
 
+    This function performs synchronous I/O, so should only be called
+    from a separate (non-event) thread.
+    :param f_p: Name of file to read.
+    :param l_stats: os.stat_result object from a previous call to this function. This can be used to avoid opening the file if nothing has changed.
+    :param max_retries: Number of times to retry lock acquisition if lock is not available.
+    :return: A tuple of (data, stats) where data is either bytes or None, and stats is an os.stat_result object.
+    """
     # If l_stats is not None, we know that the file should exist
     # (so safe to call os.lstat here) since we've called it at
     # least once before.
@@ -57,7 +92,6 @@ def try_read_from_file(f_p: str, l_stats: os.stat_result = None, retry_delay: in
         # If file is unmodified (same mtime), we haven't received anything.
         if p_stats.st_mtime == l_stats.st_mtime:
             ret_early = True
-            #log.info("Skip read, st_mtime unchanged.")
             if p_stats.st_size != 0:
                 log.warning(f"st_mtime unchanged, but has content (st_size={p_stats.st_size}). This shouldn't happen!")
         # We would expect that if the mtime *has* changed, that there should also be content for us to read.
@@ -69,13 +103,15 @@ def try_read_from_file(f_p: str, l_stats: os.stat_result = None, retry_delay: in
         if ret_early:
             return None, p_stats
 
+    # Open file in append mode for writing.
     with open(f_p, "ab+") as f:
-        if not acquire_file_lock(f, retry_delay=retry_delay, max_retries=max_retries):
+        if not acquire_file_lock(f, max_retries=max_retries):
             raise RuntimeError(f"Unable to acquire lock for '{f_p}'.")
-        # File descriptor
+
+        # Get file descriptor.
         fd = f.fileno()
 
-        # If there is something to read
+        # If file not empty, read it.
         if f.tell() != 0:
             # Move to the start
             f.seek(0)
@@ -83,6 +119,7 @@ def try_read_from_file(f_p: str, l_stats: os.stat_result = None, retry_delay: in
             all_data = f.read()
             # Truncate the file
             f.truncate(0)
+        # Otherwise, we will return None.
         else:
             all_data = None
         # Get the stats of the file *after* we've read and truncated to ensure
@@ -91,7 +128,9 @@ def try_read_from_file(f_p: str, l_stats: os.stat_result = None, retry_delay: in
         # TODO: is this sufficient?
         stats = os.stat(fd)
 
-        # Release the lock and return to
+        # Release the lock
         release_file_lock(f)
+
+    # Return data and stats.
     return all_data, stats
 

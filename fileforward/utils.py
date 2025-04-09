@@ -2,6 +2,7 @@ import glob
 import logging
 import os
 import re
+import math
 
 CON_ID_RE = re.compile("(?P<con_id>.*?)\\.(local|remote)")
 
@@ -40,3 +41,23 @@ def cleanup_connection_files(tunnel_dir: str, con_id: str):
     if os.path.isfile(ob_fpath):
         log.debug(f"{con_id} Local connection file exists, removing.")
         os.remove(ob_fpath)
+
+
+def memory_str(n_bytes: int):
+    if n_bytes == 0:
+        return "0B"
+
+    log_bytes = math.log10(math.fabs(n_bytes))
+
+    bytes_l = ["B", "KB", "MB", "GB", "TB"]
+    bytes_s = [3, 6, 9, 12, math.inf]
+
+    # Find the largest unit >1 that represents the size
+    byte_sub = 0
+    for byte_l, byte_s in zip(bytes_l, bytes_s):
+        byte_lbl = byte_l
+        if log_bytes < byte_s:
+            break
+        byte_sub = byte_s
+
+    return f"{'-' if n_bytes < 0 else ''}{math.pow(10, log_bytes - byte_sub):0.1f}{byte_lbl}"
